@@ -31,7 +31,10 @@ def vm_active() -> list:
 def sort_some(all, some) -> list:
     """ Move active VMs to top of list """
     for item in some:
-        all.remove(item)
+        try:
+            all.remove(item)
+        except ValueError:
+            some.remove(item)
     return some + all
 
 
@@ -60,7 +63,7 @@ def main():
     try:
         with open(cache_file, 'r', encoding='utf-8') as file:
             cache = json.load(file)
-    except FileNotFoundError:
+    except (FileNotFoundError, json.decoder.JSONDecodeError):
         cache = []
     unique = set(cache)
     counted = {item: cache.count(item) for item in unique}
