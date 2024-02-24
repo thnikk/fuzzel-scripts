@@ -10,7 +10,7 @@ import json
 from subprocess import Popen, PIPE
 
 
-def get_selection(input_list, prompt=""):
+def get_selection(input_list, prompt="") -> str:
     """ Get selection from list with custom prompt """
     length = str(min(len(input_list), 8))
     with Popen(
@@ -91,7 +91,34 @@ def run_yuzu(game_dir):
     return games
 
 
-def main():
+def sort_dict(dictionary) -> dict:
+    """ Sort dictionary based on values """
+    return dict(sorted(dictionary.items(), key=lambda x: x[1], reverse=True))
+
+
+def get_frequent(cache_file) -> list:
+    """ Get ordered list """
+    try:
+        with open(cache_file, 'r', encoding='utf-8') as file:
+            cache = json.load(file)
+    except (FileNotFoundError, json.decoder.JSONDecodeError):
+        cache = []
+    unique = set(cache)
+    counted = {item: cache.count(item) for item in unique}
+    return list(sort_dict(counted))
+
+
+def sort_some(full, some) -> list:
+    """ Move active VMs to top of list """
+    for item in some:
+        try:
+            full.remove(item)
+        except ValueError:
+            some.remove(item)
+    return some + full
+
+
+def main() -> None:
     """ Load launcher from config """
     config_path = os.path.expanduser("~/.config/fuzzel/fuzzel-game.json")
     try:
@@ -138,8 +165,20 @@ def main():
                     games.update(
                         {f"{launcher} [custom]": config[launcher]['command']}
                     )
-    game = get_selection(list(games))
-    Popen(games[game])
+
+    cache_file = os.path.expanduser('~/.cache/fuzzel-game.json')
+    frequent = get_frequent(cache_file)
+    games_list = sort_some(list(games), frequent)
+    selection = get_selection(games_list)
+    try:
+        with open(cache_file, 'r+', encoding='utf-8') as file:
+            cache = json.load(file)
+    except (FileNotFoundError, json.decoder.JSONDecodeError):
+        cache = []
+    cache = ([selection] + cache)[:20]
+    with open(cache_file, 'w', encoding='utf-8') as file:
+        file.write(json.dumps(cache))
+    Popen(games[selection])
 
 
 if __name__ == "__main__":
