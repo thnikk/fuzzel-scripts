@@ -50,9 +50,13 @@ def run_steam() -> dict:
 
 def run_heroic(install_dir) -> dict:
     """ Run epic game """
+    # Generate a list of all executables, get the parent directory, and convert
+    # to a set and back into a list to remove redundant items.
     installed = [
-        path.split('/')[-1] for path in glob.glob(
-            os.path.expanduser(f'{install_dir}/*'))]
+        path.split('/')[-2] for path in glob.glob(
+            os.path.expanduser(f'{install_dir}/*/*.exe'))]
+    installed = list(set(installed))
+
     apps = {}
     for library in glob.glob(os.path.expanduser(
         "~/.config/heroic/store_cache/*_library.json"
@@ -70,6 +74,12 @@ def run_heroic(install_dir) -> dict:
     return apps
 
 
+def name_from_path(path):
+    """ Clean game name """
+    name = path.split('/')[-1].split('.')[0]
+    return name.split("[")[0].split("(")[0].replace('_', ' ').rstrip()
+
+
 def run_yuzu(game_dir):
     """ Run yuzu game"""
     games = {}
@@ -77,17 +87,35 @@ def run_yuzu(game_dir):
         print("Path does not exist.", file=sys.stderr)
         sys.exit(1)
     for path in glob.glob(f"{game_dir}/*"):
-        game_name = path.split("/")[-1].split(".")[0]
         if ".nsp" in path:
-            games[game_name.split(
-                "[")[0].split("(")[0].replace('_', ' ').rstrip()] = path
+            name = name_from_path(path)
+            games[name] = path
         else:
-            files = {
+            path = sorted({
                 item: os.path.getsize(item) for item in glob.glob(f"{path}/*")}
+            )[0]
+            name = name_from_path(path)
             try:
-                games[game_name] = ["yuzu", "-f", "-g", sorted(files)[0]]
+                games[name] = ["yuzu", "-f", "-g", path]
             except IndexError:
                 pass
+    return games
+
+
+def run_retroarch(game_dir, cores):
+    """ Run game with retroarch """
+    games = {}
+    try:
+        for path in glob.glob(f"{os.path.expanduser(game_dir)}/*/*.*"):
+            if '.txt' in path:
+                continue
+            games[name_from_path(path)] = [
+                'retroarch', '-f',
+                '-L', cores[path.split('/')[-2]],
+                path
+            ]
+    except KeyError:
+        pass
     return games
 
 
@@ -127,14 +155,24 @@ def main() -> None:
     except FileNotFoundError:
         config = {
             "Steam": {"enable": True},
-            "Heroic": {"enable": True, "path": "~/Games"},
+            "Heroic": {"enable": True, "path": "~/Games/Heroic"},
             "Yuzu": {"enable": False, "path": "/mnt/server2/Games/NSP"},
-            "Genshin Impact": {
+            "RetroArch": {
                 "enable": True,
-                "command": ["an-anime-game-launcher", "--run-game"]},
-            "Honkai Star Rail": {
-                "enable": False,
-                "command": ["the-honkers-railway-launcher", "--run-game"]}
+                "cores": {
+                    "wii": "/usr/lib/libretro/dolphin_libretro.so",
+                    "snes": "/usr/lib/libretro/snes9x_libretro.so"
+                },
+                "path": "~/Games/ROMs"
+            },
+            "Custom": {
+                "enable": True,
+                "games": {
+                    "Genshin Impact": ["an-anime-game-launcher", "--run-game"],
+                    "Honkai Star Rail": ["the-honkers-railway-launcher", "--run-game"],
+                    "Minecraft": ["prismlauncher", "--launch", "1.20.4(1)"]
+                }
+                }
         }
         with open(config_path, 'w', encoding='utf-8') as config_file:
             config_file.write(json.dumps(config, indent=4))
@@ -148,23 +186,35 @@ def main() -> None:
     games = {}
     for launcher, settings in config.items():
         if settings["enable"]:
-            match launcher:
-                case "Steam":
-                    games.update({
-                        f"{item} [steam]": command for item, command in
-                        run_steam().items()})
-                case "Heroic":
-                    games.update({
-                        f"{item} [heroic]": command for item, command in
-                        run_heroic(config[launcher]['path']).items()})
-                case "Yuzu":
-                    games.update({
-                        f"{item} [yuzu]": command for item, command in
-                        run_yuzu(config[launcher]['path']).items()})
-                case _:
-                    games.update(
-                        {f"{launcher} [custom]": config[launcher]['command']}
-                    )
+            try:
+                match launcher.lower():
+                    case "steam":
+                        games.update({
+                            f"{item} [steam]": command for item, command in
+                            run_steam().items()})
+                    case "heroic":
+                        games.update({
+                            f"{item} [heroic]": command for item, command in
+                            run_heroic(config[launcher]['path']).items()})
+                    case "yuzu":
+                        games.update({
+                            f"{item} [yuzu]": command for item, command in
+                            run_yuzu(config[launcher]['path']).items()})
+                    case "retroarch":
+                        games.update({
+                            f"{item} [retroarch]": command for item, command in
+                            run_retroarch(config[launcher]['path'],
+                                          config[launcher]['cores']).items()})
+                    case "custom":
+                        games.update({
+                            f"{item} [custom]": command for item, command in
+                            config[launcher]['games'].items()})
+                    case _:
+                        pass
+            except KeyError as error:
+                print(f'Skipping {launcher} due to a configuration error:')
+                print(f'{type(error).__name__}: {error}', file=sys.stderr)
+                continue
 
     cache_file = os.path.expanduser('~/.cache/fuzzel-game.json')
     frequent = get_frequent(cache_file)
