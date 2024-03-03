@@ -67,16 +67,21 @@ def sort_dict(dictionary) -> dict:
 
 
 def filter_list(item_list, filter_strings, invert=False) -> list:
-    """ Filter items out of list """
-    temp_list = []
-    for item in item_list:
-        for filter_string in filter_strings:
-            print(filter_string, item, filter_string in item)
-            if filter_string in item:
-                temp_list.append(item)
+    """ Create list using filter strings as whitelist/blacklist filter """
+    # temp_list = []
+    # for item in item_list:
+    #     for filter_string in filter_strings:
+    #         print(filter_string, item, filter_string in item)
+    #         if filter_string in item:
+    #             temp_list.append(item)
+    temp_list = [
+        item for item in item_list
+        for filter_string in filter_strings
+        if filter_string in item
+    ]
     if invert:
         return temp_list
-    return list(set(item_list) - set(temp_list))
+    return sorted(list(set(item_list) - set(temp_list)))
 
 
 def main():
@@ -89,11 +94,11 @@ def main():
         cache = []
     unique = set(cache)
     counted = {item: cache.count(item) for item in unique}
-    sorted_cache = sort_some(vm_list(), list(sort_dict(counted)))
+    filtered_list = filter_list(vm_list(), args.filter, args.w)
+    sorted_cache = sort_some(filtered_list, list(sort_dict(counted)))
     active = vm_active()
     sorted_active = sort_some(sorted_cache, active)
-    filtered_active = filter_list(sorted_active, args.filter, args.w)
-    selection = get_selection(filtered_active)
+    selection = get_selection(sorted_active)
     if selection in active:
         operation = get_selection(["shutdown", "reboot", "destroy"],
                                   "Select an option: ")
