@@ -91,11 +91,15 @@ def run_yuzu(game_dir):
             name = name_from_path(path)
             games[name] = path
         else:
-            path = sorted({
-                item: os.path.getsize(item) for item in glob.glob(f"{path}/*")}
-            )[0]
-            name = name_from_path(path)
+            files = [
+                item for item in glob.glob(f"{path}/*")
+                if not os.path.isdir(item)
+            ]
             try:
+                path = sorted({
+                    item: os.path.getsize(item) for item in files
+                })[0]
+                name = name_from_path(path)
                 games[name] = ["yuzu", "-f", "-g", path]
             except IndexError:
                 pass
@@ -169,10 +173,11 @@ def main() -> None:
                 "enable": True,
                 "games": {
                     "Genshin Impact": ["an-anime-game-launcher", "--run-game"],
-                    "Honkai Star Rail": ["the-honkers-railway-launcher", "--run-game"],
+                    "Honkai Star Rail": [
+                        "the-honkers-railway-launcher", "--run-game"],
                     "Minecraft": ["prismlauncher", "--launch", "1.20.4(1)"]
                 }
-                }
+            }
         }
         with open(config_path, 'w', encoding='utf-8') as config_file:
             config_file.write(json.dumps(config, indent=4))
