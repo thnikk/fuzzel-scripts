@@ -80,7 +80,7 @@ def name_from_path(path):
     return name.split("[")[0].split("(")[0].replace('_', ' ').rstrip()
 
 
-def run_yuzu(game_dir):
+def run_switch(game_dir, command):
     """ Run yuzu game"""
     games = {}
     if not os.path.isdir(game_dir):
@@ -91,18 +91,26 @@ def run_yuzu(game_dir):
             name = name_from_path(path)
             games[name] = path
         else:
-            files = [
-                item for item in glob.glob(f"{path}/*")
-                if not os.path.isdir(item)
-            ]
             try:
                 path = sorted({
-                    item: os.path.getsize(item) for item in files
+                    item: os.path.getsize(item)
+                    for item in glob.glob(f"{path}/*")
+                    if not os.path.isdir(item)
                 })[0]
                 name = name_from_path(path)
-                games[name] = ["yuzu", "-f", "-g", path]
+                games[name] = command + [path]
             except IndexError:
                 pass
+    return games
+
+
+def run_rpcs3(game_dir):
+    """ Run yuzu game"""
+    games = {}
+    for path in glob.glob(f"{game_dir}/*"):
+        if os.path.isdir(path):
+            name = path.split('/')[-1]
+            games[name] = ["rpcs3", "--no-gui", "--fullscreen", path]
     return games
 
 
@@ -158,18 +166,24 @@ def main() -> None:
             config = json.load(config_file)
     except FileNotFoundError:
         config = {
-            "Steam": {"enable": True},
-            "Heroic": {"enable": True, "path": "~/Games/Heroic"},
-            "Yuzu": {"enable": False, "path": "/mnt/server2/Games/NSP"},
-            "RetroArch": {
+            "steam": {"enable": True},
+            "heroic": {"enable": True, "path": "~/Games/Heroic"},
+            "switch": {
+                "enable": False,
+                "path": "/mnt/server2/Games/NSP",
+                "command": ["yuzu", "-f", "-g"]
+            },
+            "rpcs3": {"enable": False, "path": "/mnt/server2/Games/PS3"},
+            "retroarch": {
                 "enable": True,
                 "cores": {
                     "wii": "/usr/lib/libretro/dolphin_libretro.so",
+                    "gcn": "/usr/lib/libretro/dolphin_libretro.so",
                     "snes": "/usr/lib/libretro/snes9x_libretro.so"
                 },
                 "path": "~/Games/ROMs"
             },
-            "Custom": {
+            "custom": {
                 "enable": True,
                 "games": {
                     "Genshin Impact": ["an-anime-game-launcher", "--run-game"],
@@ -204,7 +218,21 @@ def main() -> None:
                     case "yuzu":
                         games.update({
                             f"{item} [yuzu]": command for item, command in
-                            run_yuzu(config[launcher]['path']).items()})
+                            run_switch(
+                                config[launcher]['path'],
+                                ["yuzu", "-f", "-g"]
+                            ).items()})
+                    case "switch":
+                        games.update({
+                            f"{item} [switch]": command for item, command in
+                            run_switch(
+                                config[launcher]['path'],
+                                config[launcher]['command']
+                                     ).items()})
+                    case "rpcs3":
+                        games.update({
+                            f"{item} [rpcs3]": command for item, command in
+                            run_rpcs3(config[launcher]['path']).items()})
                     case "retroarch":
                         games.update({
                             f"{item} [retroarch]": command for item, command in
