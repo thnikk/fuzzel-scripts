@@ -44,6 +44,7 @@ def run_steam() -> dict:
                 if item in name.lower():
                     in_blacklist = True
             if not in_blacklist and name and appid:
+                name = f"{name} [steam]"
                 apps[name] = ["steam", f"steam://rungameid/{appid}"]
     return apps
 
@@ -57,7 +58,7 @@ def run_heroic(install_dir) -> dict:
             os.path.expanduser(f'{install_dir}/*/*.exe'))]
     installed = list(set(installed))
 
-    apps = {}
+    games = {}
     for library in glob.glob(os.path.expanduser(
         "~/.config/heroic/store_cache/*_library.json"
     )):
@@ -66,12 +67,14 @@ def run_heroic(install_dir) -> dict:
                 library = json.load(file)
                 for game in library['library']:
                     if game['folder_name'] in installed:
-                        apps[game['title']] = \
-                            ["xdg-open", f"heroic://launch/{game['runner']}"
+                        runner = game['runner']
+                        name = f"{game['title']} [{runner}]"
+                        games[name] = \
+                            ["xdg-open", f"heroic://launch/{runner}"
                                 f"/{game['app_name']}"]
         except KeyError:
             pass
-    return apps
+    return games
 
 
 def name_from_path(path):
@@ -87,9 +90,11 @@ def run_switch(game_dir, command):
         print("Path does not exist.", file=sys.stderr)
         sys.exit(1)
     for path in glob.glob(f"{game_dir}/*"):
+        name = None
+        game = None
         if ".nsp" in path:
             name = name_from_path(path)
-            games[name] = path
+            game = path
         else:
             try:
                 path = sorted({
@@ -97,10 +102,12 @@ def run_switch(game_dir, command):
                     for item in glob.glob(f"{path}/*")
                     if not os.path.isdir(item)
                 })[0]
-                name = name_from_path(path)
-                games[name] = command + [path]
+                name = f"{name_from_path(path)} [switch]"
+                game = path
             except IndexError:
                 pass
+        if name and game:
+            games[name] = command + [game]
     return games
 
 
@@ -109,25 +116,25 @@ def run_rpcs3(game_dir):
     games = {}
     for path in glob.glob(f"{game_dir}/*"):
         if os.path.isdir(path):
-            name = path.split('/')[-1]
+            name = f"{path.split('/')[-1]} [rpcs3]"
             games[name] = ["rpcs3", "--no-gui", "--fullscreen", path]
     return games
 
 
-def run_retroarch(game_dir, cores):
+def run_retroarch(game_dir, cores) -> dict:
     """ Run game with retroarch """
     games = {}
-    try:
-        for path in glob.glob(f"{os.path.expanduser(game_dir)}/*/*.*"):
-            if '.txt' in path:
-                continue
-            games[name_from_path(path)] = [
+    for path in glob.glob(f"{os.path.expanduser(game_dir)}/*/*.*"):
+        if '.txt' in path:
+            continue
+        core = path.split('/')[-2]
+        if core in list(cores):
+            name = f"{name_from_path(path)} [{core}]"
+            games[name] = [
                 'retroarch', '-f',
-                '-L', cores[path.split('/')[-2]],
+                '-L', cores[core],
                 path
             ]
-    except KeyError:
-        pass
     return games
 
 
@@ -195,11 +202,12 @@ def main() -> None:
         }
         with open(config_path, 'w', encoding='utf-8') as config_file:
             config_file.write(json.dumps(config, indent=4))
-            Popen(
+            with Popen(
                 [
                     "fuzzel", "--dmenu", "-l", "0", "-p",
                     "Config created, please "
-                    "edit ~/.config/fuzzel/fuzzel-game.json"])
+                    "edit ~/.config/fuzzel/fuzzel-game.json"]):
+                pass
             sys.exit(1)
 
     games = {}
@@ -208,36 +216,21 @@ def main() -> None:
             try:
                 match launcher.lower():
                     case "steam":
-                        games.update({
-                            f"{item} [steam]": command for item, command in
-                            run_steam().items()})
+                        games.update(run_steam())
                     case "heroic":
-                        games.update({
-                            f"{item} [heroic]": command for item, command in
-                            run_heroic(config[launcher]['path']).items()})
+                        games.update(run_heroic(config[launcher]['path']))
                     case "yuzu":
-                        games.update({
-                            f"{item} [yuzu]": command for item, command in
-                            run_switch(
-                                config[launcher]['path'],
-                                ["yuzu", "-f", "-g"]
-                            ).items()})
+                        games.update(run_switch(config[launcher]['path'],
+                                                ["yuzu", "-f", "-g"]))
                     case "switch":
-                        games.update({
-                            f"{item} [switch]": command for item, command in
-                            run_switch(
-                                config[launcher]['path'],
-                                config[launcher]['command']
-                                     ).items()})
+                        games.update(run_switch(config[launcher]['path'],
+                                                config[launcher]['command']))
                     case "rpcs3":
-                        games.update({
-                            f"{item} [rpcs3]": command for item, command in
-                            run_rpcs3(config[launcher]['path']).items()})
+                        games.update(run_rpcs3(config[launcher]['path']))
                     case "retroarch":
-                        games.update({
-                            f"{item} [retroarch]": command for item, command in
+                        games.update(
                             run_retroarch(config[launcher]['path'],
-                                          config[launcher]['cores']).items()})
+                                          config[launcher]['cores']))
                     case "custom":
                         games.update({
                             f"{item} [custom]": command for item, command in
@@ -261,7 +254,8 @@ def main() -> None:
     cache = ([selection] + cache)[:20]
     with open(cache_file, 'w', encoding='utf-8') as file:
         file.write(json.dumps(cache))
-    Popen(games[selection])
+    with Popen(games[selection]):
+        pass
 
 
 if __name__ == "__main__":
