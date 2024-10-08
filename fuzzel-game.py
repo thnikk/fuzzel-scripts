@@ -7,7 +7,7 @@ import glob
 import os
 import sys
 import json
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, run
 
 
 def get_selection(input_list, prompt="") -> str:
@@ -83,6 +83,15 @@ def name_from_path(path):
     return name.split("[")[0].split("(")[0].replace('_', ' ').rstrip()
 
 
+def run_cemu(rom_dir) -> dict:
+    """ Run cemu games """
+    return {
+        f"{rom} [cemu]": ["cemu", "--game", f"{rom_dir}/{rom}"]
+        for rom in os.listdir(rom_dir)
+        if os.path.isdir(f"{rom_dir}/{rom}")
+    }
+
+
 def run_switch(game_dir, command):
     """ Run yuzu game"""
     games = {}
@@ -125,17 +134,33 @@ def run_retroarch(game_dir, cores) -> dict:
     """ Run game with retroarch """
     games = {}
     for path in glob.glob(f"{os.path.expanduser(game_dir)}/*/*.*"):
-        if '.txt' in path:
+        ext = path.split('.')[-1]
+        # Extension blacklist
+        if ext in ["txt", "sav"]:
             continue
         core = path.split('/')[-2]
         if core in list(cores):
             name = f"{name_from_path(path)} [{core}]"
             games[name] = [
+                # 'pygame', '-mgo',
                 'retroarch', '-f',
                 '-L', cores[core],
                 path
             ]
     return games
+
+
+def run_bottles(bottle_name) -> dict:
+    """ Run game through bottles """
+    output = run([
+        'bottles-cli', '-j', 'programs', '-b', bottle_name
+    ], capture_output=True).stdout.decode('utf-8')
+    programs = json.loads(output)
+    return {
+        f"{program['name']} [bottles-{bottle_name}]": [
+            'bottles-cli', 'run', '-b', bottle_name, '-p', program['name']]
+        for program in programs
+    }
 
 
 def sort_dict(dictionary) -> dict:
@@ -231,6 +256,12 @@ def main() -> None:
                         games.update(
                             run_retroarch(config[launcher]['path'],
                                           config[launcher]['cores']))
+                    case "cemu":
+                        games.update(
+                            run_cemu(config[launcher]['path']))
+                    case "bottles":
+                        games.update(
+                            run_bottles(config[launcher]['bottle']))
                     case "custom":
                         games.update({
                             f"{item} [custom]": command for item, command in
