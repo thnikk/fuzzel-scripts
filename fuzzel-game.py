@@ -7,6 +7,7 @@ import glob
 import os
 import sys
 import json
+import yaml
 from subprocess import Popen, PIPE, run
 
 
@@ -150,17 +151,20 @@ def run_retroarch(game_dir, cores) -> dict:
     return games
 
 
-def run_bottles(bottle_name) -> dict:
-    """ Run game through bottles """
-    output = run([
-        'bottles-cli', '-j', 'programs', '-b', bottle_name
-    ], capture_output=True).stdout.decode('utf-8')
-    programs = json.loads(output)
-    return {
-        f"{program['name']} [bottles-{bottle_name}]": [
-            'bottles-cli', 'run', '-b', bottle_name, '-p', program['name']]
-        for program in programs
-    }
+def run_bottles(bottle):
+    with open(
+        os.path.expanduser(
+            f'~/.local/share/bottles/bottles/{bottle}/bottle.yml'), 'r'
+    ) as file:
+        try:
+            return {
+                f"{info['name']} [bottles-{bottle}]":
+                ['bottles-cli', 'run', '-b', bottle, '-p', info['name']]
+                for id, info in
+                yaml.safe_load(file)['External_Programs'].items()
+            }
+        except yaml.YAMLError:
+            return None
 
 
 def sort_dict(dictionary) -> dict:
