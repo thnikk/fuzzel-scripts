@@ -25,28 +25,33 @@ def get_selection(input_list, prompt="") -> str:
         return selection.decode().strip()
 
 
-def run_steam() -> dict:
+def run_steam(config) -> dict:
     """ Run steam game """
     apps = {}
     blacklist = ['proton', 'steam']
-    for manifest in glob.glob(
-            os.path.expanduser(
-            "~/.local/share/Steam/steamapps/appmanifest*.acf")):
-        with open(manifest, 'r', encoding='utf-8') as file:
-            name = ""
-            appid = ""
-            for line in file:
-                if "name" in line:
-                    name = line.split('"')[-2]
-                if "appid" in line:
-                    appid = line.split('"')[-2]
-            in_blacklist = False
-            for item in blacklist:
-                if item in name.lower():
-                    in_blacklist = True
-            if not in_blacklist and name and appid:
-                name = f"{name} [steam]"
-                apps[name] = ["steam", f"steam://rungameid/{appid}"]
+    if "extra" in config:
+        extra = config["extra"]
+    else:
+        extra = []
+    for path in ["~/.local/share/Steam"] + extra:
+        for manifest in glob.glob(
+                os.path.expanduser(
+                f"{path}/steamapps/appmanifest*.acf")):
+            with open(manifest, 'r', encoding='utf-8') as file:
+                name = ""
+                appid = ""
+                for line in file:
+                    if "name" in line:
+                        name = line.split('"')[-2]
+                    if "appid" in line:
+                        appid = line.split('"')[-2]
+                in_blacklist = False
+                for item in blacklist:
+                    if item in name.lower():
+                        in_blacklist = True
+                if not in_blacklist and name and appid:
+                    name = f"{name} [steam]"
+                    apps[name] = ["steam", f"steam://rungameid/{appid}"]
     return apps
 
 
@@ -122,12 +127,24 @@ def run_switch(game_dir, command):
 
 
 def run_rpcs3(game_dir):
-    """ Run yuzu game"""
     games = {}
     for path in glob.glob(f"{game_dir}/*"):
         if os.path.isdir(path):
             name = f"{path.split('/')[-1]} [rpcs3]"
             games[name] = ["rpcs3", "--no-gui", "--fullscreen", path]
+    return games
+
+
+def run_pcsx2(game_dir):
+    games = {}
+    for path in glob.glob(f"{game_dir}/*"):
+        if os.path.isdir(path):
+            name = f"{path.split('/')[-1]} [pcsx2]"
+            games[name] = ["pcsx2", "-fullscreen", "-bigpicture", path]
+        elif 'iso' in path:
+            name = path.split('/')[-1].split('.')[0].split('(')[0].strip()
+            name = f"{name} [pcsx2]"
+            games[name] = ["pcsx2", "-fullscreen", "-bigpicture", path]
     return games
 
 
@@ -151,15 +168,28 @@ def run_retroarch(game_dir, cores) -> dict:
     return games
 
 
-def run_bottles(bottle):
-    with open(
-        os.path.expanduser(
-            f'~/.local/share/bottles/bottles/{bottle}/bottle.yml'), 'r'
-    ) as file:
+def run_bottles(config):
+    if 'flatpak' in config and config['flatpak']:
+        command = [
+            'flatpak', 'run', '--command=bottles-cli',
+            'com.usebottles.bottles']
+        path = os.path.expanduser(
+            '~/.var/app/com.usebottles.bottles/data/bottles')
+    else:
+        command = ['bottles-cli', 'run']
+        path = os.path.expanduser('~/.local/share/bottles')
+
+    if 'pre-command' in config and config['pre-command']:
+        pre_command = config['pre-command']
+    else:
+        pre_command = []
+
+    with open(f'{path}/bottles/{config["bottle"]}/bottle.yml', 'r') as file:
         try:
             return {
-                f"{info['name']} [bottles-{bottle}]":
-                ['bottles-cli', 'run', '-b', bottle, '-p', info['name']]
+                f"{info['name']} [bottles-{config['bottle']}]":
+                    pre_command + command +
+                    ['run', '-b', config['bottle'], '-p', info['name']]
                 for id, info in
                 yaml.safe_load(file)['External_Programs'].items()
             }
@@ -210,6 +240,7 @@ def main() -> None:
                 "command": ["yuzu", "-f", "-g"]
             },
             "rpcs3": {"enable": False, "path": "/mnt/server2/Games/PS3"},
+            "pcsx2": {"enable": False, "path": "/mnt/server2/Games/PS2"},
             "retroarch": {
                 "enable": True,
                 "cores": {
@@ -245,7 +276,7 @@ def main() -> None:
             try:
                 match launcher.lower():
                     case "steam":
-                        games.update(run_steam())
+                        games.update(run_steam(config[launcher]))
                     case "heroic":
                         games.update(run_heroic(config[launcher]['path']))
                     case "yuzu":
@@ -256,6 +287,8 @@ def main() -> None:
                                                 config[launcher]['command']))
                     case "rpcs3":
                         games.update(run_rpcs3(config[launcher]['path']))
+                    case "pcsx2":
+                        games.update(run_pcsx2(config[launcher]['path']))
                     case "retroarch":
                         games.update(
                             run_retroarch(config[launcher]['path'],
@@ -265,7 +298,7 @@ def main() -> None:
                             run_cemu(config[launcher]['path']))
                     case "bottles":
                         games.update(
-                            run_bottles(config[launcher]['bottle']))
+                            run_bottles(config[launcher]))
                     case "custom":
                         games.update({
                             f"{item} [custom]": command for item, command in
@@ -289,6 +322,7 @@ def main() -> None:
     cache = ([selection] + cache)[:20]
     with open(cache_file, 'w', encoding='utf-8') as file:
         file.write(json.dumps(cache))
+    print(games[selection])
     with Popen(games[selection]):
         pass
 
